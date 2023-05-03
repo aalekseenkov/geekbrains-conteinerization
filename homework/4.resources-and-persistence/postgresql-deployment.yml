@@ -1,0 +1,63 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: csi-ceph-hdd-dp1
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ava-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ava-app
+  strategy:
+  type: RollingUpdate
+  rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: ava-app
+    spec:
+      volumes:
+        - name: postgresql-volume
+          persistentVolumeClaim:
+            claimName: postgresql-pvc
+      containers:
+      - image: postgres:10.13
+        name: postgresql
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        volumeMounts:
+          - name: postgresql-volume
+            mountPath: /var/lib/postgresql/data
+        ports:
+          - containerPort: 5432
+            protocol: TCP
+        env:
+        - name: POSTGRES_DB
+          value: "testdatabase"
+        - name: POSTGRES_USER
+          value: "testuser"
+        - name: POSTGRES_PASSWORDOO
+          value: "testpassword"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+
