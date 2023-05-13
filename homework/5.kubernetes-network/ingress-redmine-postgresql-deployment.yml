@@ -1,0 +1,173 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgresql-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: csi-ceph-hdd-dp1
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgresql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgresql
+  strategy:
+  type: RollingUpdate
+  rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: postgresql
+    spec:
+      volumes:
+        - name: postgresql-volume
+          persistentVolumeClaim:
+            claimName: postgresql-pvc
+      containers:
+      - image: postgres:10.13
+        name: postgresql
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        volumeMounts:
+          - name: postgresql-volume
+            mountPath: /var/lib/postgresql/data
+        ports:
+          - containerPort: 5432
+            protocol: TCP
+        env:
+        - name: POSTGRES_DB
+          value: "testdatabase"
+        - name: POSTGRES_USER
+          value: "testuser"
+        - name: POSTGRES_PASSWORD
+          value: "testpassword"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: database
+spec:
+  ports:
+  - port: 5432
+    targetPort: 5432
+  selector:
+    app: postgresql
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redmine
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redmine
+  strategy:
+  type: RollingUpdate
+  rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: redmine
+    spec:
+      containers:
+      - image: redmine:4.1.1
+        name: redmine
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+          limits:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+          - containerPort: 3000
+            protocol: TCP
+        env:
+        - name: REDMINE_DB_POSTGRES
+          value: "database"
+        - name: REDMINE_DB_USERNAME
+          value: "testuser"
+        - name: REDMINE_DB_PASSWORD
+          value: "testpassword"
+        - name: REDMINE_DB_DATABASE
+          value: "testdatabase"
+        - name: REDMINE_SECRET_KEY_BASE
+          value: "supersecretkey"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redmine
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+  selector:
+    app: redmine
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: redmine-ingress-simple
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - http:
+      paths:
+      - path: "/"
+        pathType: Prefix
+        backend:
+          service:
+            name: redmine
+            port:
+              number: 3000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: my-ingress-api
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: redmine.local
+    http:
+      paths:
+      - path: "/api"
+        pathType: Prefix
+        backend:
+          service:
+            name: redmine
+            port:
+              number: 3000
+                                
